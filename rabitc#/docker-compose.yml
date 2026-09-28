@@ -1,0 +1,47 @@
+services:
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
+  producer:
+    build: ./Producer
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_EXCHANGE: alerts.exchange
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+
+  warning-consumer:
+    build: ./WarningConsumer
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_EXCHANGE: alerts.exchange
+      RABBITMQ_QUEUE: warning-queue
+      RABBITMQ_ROUTING_KEY: alert.warning
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+
+  critical-consumer:
+    build: ./CriticalConsumer
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_EXCHANGE: alerts.exchange
+      RABBITMQ_QUEUE: critical-queue
+      RABBITMQ_ROUTING_KEY: alert.critical
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
