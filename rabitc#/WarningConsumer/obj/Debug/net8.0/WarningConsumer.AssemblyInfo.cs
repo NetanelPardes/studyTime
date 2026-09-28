@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("WarningConsumer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+623419a637540d39a42b1af6a74bf52edbc8ec8e")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cf6927cdb9735c368c2b1b77faa09781f7f972aa")]
 [assembly: System.Reflection.AssemblyProductAttribute("WarningConsumer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WarningConsumer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

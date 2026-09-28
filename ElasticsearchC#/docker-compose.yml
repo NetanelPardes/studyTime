@@ -1,0 +1,35 @@
+services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.3
+
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+
+    ports:
+      - "9200:9200"
+
+
+  elastic-consumer:
+    build: ./ElasticsearchConsumerCSharp
+
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_INDEX: events
+
+      RABBITMQ_HOST: host.docker.internal
+      RABBITMQ_PORT: 5673
+      RABBITMQ_EXCHANGE: alerts.exchange
+      RABBITMQ_QUEUE: elastic-warning-queue
+      RABBITMQ_ROUTING_KEY: alert.warning
+
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      KAFKA_TOPIC: events
+      KAFKA_GROUP_ID: elastic-consumer-group
+
+    depends_on:
+      - elasticsearch
+
+    restart: unless-stopped

@@ -1,5 +1,6 @@
 import json
 import os
+import time
 
 import pika
 from elasticsearch import Elasticsearch
@@ -12,7 +13,17 @@ from elasticsearch import Elasticsearch
 elastic_url = os.getenv("ELASTICSEARCH_URL")
 index_name = os.getenv("ELASTICSEARCH_INDEX")
 
-elastic = Elasticsearch(elastic_url)
+if not elastic_url:
+    raise Exception("ELASTICSEARCH_URL missing")
+
+if not index_name:
+    raise Exception("ELASTICSEARCH_INDEX missing")
+
+
+# יוצר חיבור ל-Elasticsearch
+elastic = Elasticsearch(
+    elastic_url
+)
 
 
 # --------------------------------------------------
@@ -38,23 +49,91 @@ def save_to_elasticsearch(message):
 
 def start_rabbit_consumer():
 
+    # כתובת RabbitMQ
     rabbit_host = os.getenv("RABBITMQ_HOST")
-    rabbit_exchange = os.getenv("RABBITMQ_EXCHANGE")
-    rabbit_queue = os.getenv("RABBITMQ_QUEUE")
-    rabbit_routing_key = os.getenv("RABBITMQ_ROUTING_KEY")
 
-
-    # מתחבר ל-RabbitMQ
-    connection = pika.BlockingConnection(
-        pika.ConnectionParameters(
-            host=rabbit_host
-        )
+    # הפורט של RabbitMQ
+    rabbit_port = int(
+        os.getenv("RABBITMQ_PORT", "5672")
     )
 
+    # שם ה-Exchange
+    rabbit_exchange = os.getenv(
+        "RABBITMQ_EXCHANGE"
+    )
+
+    # שם ה-Queue
+    rabbit_queue = os.getenv(
+        "RABBITMQ_QUEUE"
+    )
+
+    # Routing Key
+    rabbit_routing_key = os.getenv(
+        "RABBITMQ_ROUTING_KEY"
+    )
+
+
+    if not rabbit_host:
+        raise Exception("RABBITMQ_HOST missing")
+
+    if not rabbit_exchange:
+        raise Exception("RABBITMQ_EXCHANGE missing")
+
+    if not rabbit_queue:
+        raise Exception("RABBITMQ_QUEUE missing")
+
+    if not rabbit_routing_key:
+        raise Exception("RABBITMQ_ROUTING_KEY missing")
+
+
+    # --------------------------------------------------
+    # Connection
+    # --------------------------------------------------
+
+    # מנסה להתחבר שוב ושוב ל-RabbitMQ
+    # עד שהחיבור מצליח
+    while True:
+
+        try:
+
+            print(
+                f"Connecting to RabbitMQ: "
+                f"{rabbit_host}:{rabbit_port}"
+            )
+
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=rabbit_host,
+                    port=rabbit_port
+                )
+            )
+
+            print(
+                "Connected to RabbitMQ"
+            )
+
+            break
+
+
+        except pika.exceptions.AMQPConnectionError:
+
+            print(
+                "RabbitMQ is not ready. "
+                "Retrying in 5 seconds..."
+            )
+
+            time.sleep(5)
+
+
+    # יוצר Channel
     channel = connection.channel()
 
 
-    # יוצר Exchange
+    # --------------------------------------------------
+    # Exchange
+    # --------------------------------------------------
+
+    # יוצר או מוודא שה-Exchange קיים
     channel.exchange_declare(
         exchange=rabbit_exchange,
         exchange_type="direct",
@@ -62,14 +141,22 @@ def start_rabbit_consumer():
     )
 
 
-    # יוצר Queue
+    # --------------------------------------------------
+    # Queue
+    # --------------------------------------------------
+
+    # יוצר Queue נפרדת עבור Elasticsearch
     channel.queue_declare(
         queue=rabbit_queue,
         durable=True
     )
 
 
-    # מחבר את ה-Queue ל-Exchange
+    # --------------------------------------------------
+    # Binding
+    # --------------------------------------------------
+
+    # מחבר את ה-Queue ל-Exchange לפי Routing Key
     channel.queue_bind(
         exchange=rabbit_exchange,
         queue=rabbit_queue,
@@ -77,18 +164,30 @@ def start_rabbit_consumer():
     )
 
 
+    # --------------------------------------------------
+    # QoS
+    # --------------------------------------------------
+
     # מקבל הודעה אחת בכל פעם
     channel.basic_qos(
         prefetch_count=1
     )
 
 
-    # רץ בכל פעם שמגיעה הודעה
-    def callback(ch, method, properties, body):
+    # --------------------------------------------------
+    # Callback
+    # --------------------------------------------------
+
+    def callback(
+        ch,
+        method,
+        properties,
+        body
+    ):
 
         try:
 
-            # ממיר את ההודעה ל-dictionary
+            # הופך את ההודעה מ-bytes ל-dictionary
             message = json.loads(
                 body.decode("utf-8")
             )
@@ -99,11 +198,13 @@ def start_rabbit_consumer():
             )
 
 
-            # שומר ל-Elasticsearch
-            save_to_elasticsearch(message)
+            # שומר את ההודעה ב-Elasticsearch
+            save_to_elasticsearch(
+                message
+            )
 
 
-            # ACK אחרי שהשמירה הצליחה
+            # שולח ACK רק אחרי שהשמירה הצליחה
             ch.basic_ack(
                 delivery_tag=method.delivery_tag
             )
@@ -116,14 +217,18 @@ def start_rabbit_consumer():
             )
 
 
-            # אם הייתה שגיאה
+            # שולח NACK אם הייתה שגיאה
             ch.basic_nack(
                 delivery_tag=method.delivery_tag,
                 requeue=False
             )
 
 
-    # מתחיל לצרוך מה-Queue
+    # --------------------------------------------------
+    # Start Consumer
+    # --------------------------------------------------
+
+    # מתחיל לצרוך הודעות מה-Queue
     channel.basic_consume(
         queue=rabbit_queue,
         on_message_callback=callback,
@@ -131,7 +236,9 @@ def start_rabbit_consumer():
     )
 
 
-    print("Waiting for RabbitMQ messages...")
+    print(
+        "Waiting for RabbitMQ messages..."
+    )
 
 
     # משאיר את ה-Consumer פעיל
@@ -139,100 +246,7 @@ def start_rabbit_consumer():
 
 
 # --------------------------------------------------
-# Kafka Consumer
-# כרגע בהערה עד שיהיה Producer ששולח ל-Kafka
-# --------------------------------------------------
-
-# from confluent_kafka import Consumer
-
-
-# def start_kafka_consumer():
-
-#     kafka_bootstrap = os.getenv(
-#         "KAFKA_BOOTSTRAP_SERVERS"
-#     )
-
-#     kafka_topic = os.getenv(
-#         "KAFKA_TOPIC"
-#     )
-
-#     kafka_group = os.getenv(
-#         "KAFKA_GROUP_ID"
-#     )
-
-
-#     consumer = Consumer({
-#         "bootstrap.servers": kafka_bootstrap,
-#         "group.id": kafka_group,
-#         "auto.offset.reset": "earliest",
-#         "enable.auto.commit": False
-#     })
-
-
-#     consumer.subscribe(
-#         [kafka_topic]
-#     )
-
-
-#     print("Waiting for Kafka messages...")
-
-
-#     while True:
-
-#         kafka_message = consumer.poll(1.0)
-
-
-#         if kafka_message is None:
-#             continue
-
-
-#         if kafka_message.error():
-
-#             print(
-#                 kafka_message.error()
-#             )
-
-#             continue
-
-
-#         try:
-
-#             message = json.loads(
-#                 kafka_message.value().decode(
-#                     "utf-8"
-#                 )
-#             )
-
-
-#             print(
-#                 f"Kafka received: {message['id']}"
-#             )
-
-
-#             save_to_elasticsearch(message)
-
-
-#             consumer.commit(
-#                 message=kafka_message,
-#                 asynchronous=False
-#             )
-
-
-#         except Exception as error:
-
-#             print(
-#                 f"Kafka Error: {error}"
-#             )
-
-
-# --------------------------------------------------
 # Main
 # --------------------------------------------------
 
-# כרגע מפעילים רק RabbitMQ
 start_rabbit_consumer()
-
-
-# כשנרצה להחזיר את Kafka,
-# נשתמש שוב ב-thread עבור RabbitMQ
-# ונפעיל את Kafka בתהליך הראשי

@@ -1,47 +1,5 @@
 services:
 
-  kafka:
-    image: apache/kafka:3.9.1
-    container_name: kafka
-
-    ports:
-      - "9092:9092"
-
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-
-      KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:29093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://localhost:9092
-
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
-
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
-
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-
-
-  rabbitmq:
-    image: rabbitmq:4-management
-    container_name: rabbitmq
-
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.5.3
     container_name: elasticsearch
@@ -54,12 +12,6 @@ services:
     ports:
       - "9200:9200"
 
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
 
   elastic-consumer:
     build: ./Consumer
@@ -69,23 +21,15 @@ services:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       ELASTICSEARCH_INDEX: events
 
-      RABBITMQ_HOST: rabbitmq
+      # מתחבר ל-RabbitMQ של הפרויקט rabitPython
+      RABBITMQ_HOST: host.docker.internal
+      RABBITMQ_PORT: 5673
+
       RABBITMQ_EXCHANGE: alerts.exchange
-      RABBITMQ_QUEUE: warning-queue
+      RABBITMQ_QUEUE: elastic-warning-queue
       RABBITMQ_ROUTING_KEY: alert.warning
 
-      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
-      KAFKA_TOPIC: events
-      KAFKA_GROUP_ID: elastic-consumer-group
-
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-
-      elasticsearch:
-        condition: service_healthy
-
-      kafka:
-        condition: service_started
+      - elasticsearch
 
     restart: unless-stopped
